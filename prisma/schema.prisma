@@ -25,10 +25,12 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // 关联
-  deptId    Int?       @map("dept_id") // 部门ID
-  dept      Dept?      @relation(fields: [deptId], references: [id]) // 用户所属部门
-  roles     Role[]     @relation("UserRoles") // 用户角色多对多关系
+  deptId    Int?           @map("dept_id") // 部门ID
+  dept      Dept?          @relation(fields: [deptId], references: [id]) // 用户所属部门
+  userRoles UserRole[] // 用户角色关联
   loginLogs LoginLog[] // 用户登录日志
+  opLogs    OperationLog[] // 用户操作日志
+  uploads   Upload[] // 用户上传文件
 
   @@map("sys_user")
 }
@@ -46,10 +48,25 @@ model Role {
   orderNo   Int      @default(0) @map("order_no") // 排序号
 
   // 关联
-  users User[] @relation("UserRoles") // 角色用户多对多关系
-  menus Menu[] @relation("RoleMenus") // 角色菜单多对多关系
+  userRoles UserRole[] // 角色用户关联
+  roleMenus RoleMenu[] // 角色菜单关联
+  roleDepts RoleDept[] // 角色部门数据权限关联
 
   @@map("sys_role")
+}
+
+// 用户角色关系表
+model UserRole {
+  userId    Int      @map("user_id")
+  roleId    Int      @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // 关联
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("sys_user_role")
 }
 
 // 菜单表
@@ -68,16 +85,31 @@ model Menu {
   isExt       Int      @default(0) @map("is_ext") // 是否外链：0否 1是
   extOpenMode Int      @default(1) @map("ext_open_mode") // 外链打开方式：1新窗口 2内嵌
   activeMenu  String?  @map("active_menu") // 高亮菜单
+  query       String? // 路由参数
   orderNo     Int      @default(0) @map("order_no") // 排序号
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // 关联
-  parent   Menu?  @relation("MenuToMenu", fields: [parentId], references: [id])
-  children Menu[] @relation("MenuToMenu")
-  roles    Role[] @relation("RoleMenus") // 菜单角色多对多关系
+  parent    Menu?      @relation("MenuToMenu", fields: [parentId], references: [id])
+  children  Menu[]     @relation("MenuToMenu")
+  roleMenus RoleMenu[] // 菜单角色关联
 
   @@map("sys_menu")
+}
+
+// 角色菜单关系表
+model RoleMenu {
+  roleId    Int      @map("role_id")
+  menuId    Int      @map("menu_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // 关联
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, menuId])
+  @@map("sys_role_menu")
 }
 
 // 部门表
@@ -91,11 +123,26 @@ model Dept {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // 关联
-  parent   Dept?  @relation("DeptToDept", fields: [parentId], references: [id])
-  children Dept[] @relation("DeptToDept")
-  users    User[] // 部门下的用户
+  parent    Dept?      @relation("DeptToDept", fields: [parentId], references: [id])
+  children  Dept[]     @relation("DeptToDept")
+  users     User[] // 部门下的用户
+  roleDepts RoleDept[] // 部门数据权限关联
 
   @@map("sys_dept")
+}
+
+// 角色部门数据权限表
+model RoleDept {
+  roleId    Int      @map("role_id")
+  deptId    Int      @map("dept_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // 关联
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  dept Dept @relation(fields: [deptId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, deptId])
+  @@map("sys_role_dept")
 }
 
 // 字典类型表
@@ -157,6 +204,8 @@ model LoginLog {
   ua        String? // 用户代理
   address   String? // 登录地址
   provider  String? // 登录提供者
+  status    Int      @default(1) // 状态：1成功 0失败
+  message   String? // 登录消息
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -164,4 +213,44 @@ model LoginLog {
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sys_login_log")
+}
+
+// 操作日志表
+model OperationLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?     @map("user_id") // 操作用户ID
+  module      String? // 操作模块
+  action      String? // 操作类型
+  ip          String? // 操作IP
+  path        String // 请求路径
+  method      String // 请求方法
+  params      String?  @db.Text // 请求参数
+  result      String?  @db.Text // 操作结果
+  status      Int // 操作状态
+  duration    Int? // 执行时间(ms)
+  description String? // 操作描述
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // 关联
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("sys_operation_log")
+}
+
+// 文件上传表
+model Upload {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id") // 上传用户ID
+  filename  String // 文件名
+  filePath  String   @map("file_path") // 文件路径
+  mimetype  String // 文件类型
+  size      Int // 文件大小
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // 关联
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("sys_upload")
 }

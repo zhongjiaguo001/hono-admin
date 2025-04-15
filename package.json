@@ -1,9 +1,10 @@
 {
   "name": "hono-admin",
+  "type":"module",
   "scripts": {
-    "dev": "bun run --hot src/app.ts",
-    "build": "tsc && tsc-alias -p tsconfig.json",
-    "start": "bun dist/server.js"
+    "dev": "bun run --hot src/server.ts",
+    "build": "bun build src/server.ts --outdir dist",
+    "start": "bun run dist/server.js"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.4.3",
@@ -16,6 +17,8 @@
     "nodemailer": "^6.10.0",
     "prisma": "^6.5.0",
     "uuid": "^11.1.0",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

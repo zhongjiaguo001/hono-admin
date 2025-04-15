@@ -1,4 +1,5 @@
 import Redis from "ioredis";
+import { config } from "@/config";
 
 // Redis配置选项
 interface RedisConfig {
@@ -14,7 +15,7 @@ interface RedisConfig {
 
 // 默认配置
 const defaultConfig: RedisConfig = {
-  url: process.env.REDIS_URL || "redis://localhost:6379",
+  url: config.redis.host,
   retryStrategy: (times) => {
     // 指数退避策略: 1s, 2s, 4s, 8s...
     // 最多重试5次，超过则放弃

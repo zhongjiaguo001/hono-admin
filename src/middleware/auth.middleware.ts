@@ -1,9 +1,8 @@
 import { Context, Next } from "hono";
 import { verify } from "hono/jwt";
-import { redisUtils } from "@/db/redis";
-
-// JWT密钥，与登录时使用的相同
-const JWT_SECRET = process.env.JWT_SECRET as string;
+import { redisUtils } from "@/utils/redis.utils";
+import { config } from "@/config";
+import { logger } from "@/utils/logger.utils"; // 如果您有日志工具
 
 // 定义JWT负载的类型
 interface JWTPayload {
@@ -14,11 +13,20 @@ interface JWTPayload {
   exp: number;
 }
 
+// 不需要认证的路径列表
+const PUBLIC_PATHS = ["/auth/login", "/auth/register", "/docs", "/health"];
+
 /**
  * 认证中间件 - 验证JWT token并检查Redis中是否存在对应记录
  */
 export const authMiddleware = async (c: Context, next: Next) => {
   try {
+    // 检查是否为公开路径
+    const path = c.req.path;
+    if (PUBLIC_PATHS.some((p) => path.startsWith(p))) {
+      return next();
+    }
+
     // 1. 从请求头中获取Authorization
     const authHeader = c.req.header("Authorization");
 
@@ -38,12 +46,30 @@ export const authMiddleware = async (c: Context, next: Next) => {
     // 3. 验证token
     let payload: JWTPayload;
     try {
-      payload = (await verify(token, JWT_SECRET)) as unknown as JWTPayload;
+      // 使用配置中的JWT密钥
+      payload = (await verify(
+        token,
+        config.auth.jwtSecret
+      )) as unknown as JWTPayload;
     } catch (error) {
+      // 使用日志记录错误
+      logger?.warn("JWT验证失败:", { error, path: c.req.path });
+
+      // 区分过期和其他错误
+      if (error instanceof Error && error.message.includes("expired")) {
+        return c.json(
+          {
+            code: 401,
+            message: "token已过期，请重新登录",
+          },
+          401
+        );
+      }
+
       return c.json(
         {
           code: 401,
-          message: "无效的token或token已过期",
+          message: "无效的token",
         },
         401
       );
@@ -69,10 +95,22 @@ export const authMiddleware = async (c: Context, next: Next) => {
       username: payload.username,
     });
 
+    // 6. 检查令牌是否接近过期，如果是则自动刷新（可选）
+    const now = Math.floor(Date.now() / 1000);
+    const timeRemaining = payload.exp - now;
+    const tokenLifetime = payload.exp - payload.iat;
+    const refreshThreshold = tokenLifetime * 0.2; // 20%的剩余寿命
+
+    if (timeRemaining < refreshThreshold) {
+      // 这里可以添加令牌刷新逻辑
+      // 例如生成新令牌并在响应头中返回
+      // c.header('X-New-Token', newToken);
+    }
+
     // 继续处理请求
     await next();
   } catch (error) {
-    console.error("Auth middleware error:", error);
+    logger?.error("认证中间件错误:", error);
     return c.json(
       {
         code: 500,
