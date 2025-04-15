@@ -1,0 +1,28 @@
+{
+  "name": "hono-admin",
+  "scripts": {
+    "dev": "bun run --hot src/app.ts",
+    "build": "tsc && tsc-alias -p tsconfig.json",
+    "start": "bun dist/server.js"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.4.3",
+    "@prisma/client": "^6.5.0",
+    "@types/nodemailer": "^6.4.17",
+    "bcryptjs": "^3.0.2",
+    "date-fns": "^4.1.0",
+    "hono": "^4.7.5",
+    "ioredis": "^5.6.0",
+    "nodemailer": "^6.10.0",
+    "prisma": "^6.5.0",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/bun": "latest"
+  },
+  "prisma": {
+    "seed": "bun run src/db/seed.ts"
+  }
+}

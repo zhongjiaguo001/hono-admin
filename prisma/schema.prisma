@@ -1,0 +1,167 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 用户表
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique // 登录账号
+  password  String // 密码
+  psalt     String // 密码盐
+  nickname  String? // 用户昵称
+  avatar    String? // 头像
+  email     String?  @unique // 邮箱
+  phone     String? // 手机号
+  qq        String? // QQ号
+  remark    String? // 备注
+  status    Int      @default(1) // 状态：1正常 0禁用
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // 关联
+  deptId    Int?       @map("dept_id") // 部门ID
+  dept      Dept?      @relation(fields: [deptId], references: [id]) // 用户所属部门
+  roles     Role[]     @relation("UserRoles") // 用户角色多对多关系
+  loginLogs LoginLog[] // 用户登录日志
+
+  @@map("sys_user")
+}
+
+// 角色表
+model Role {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique // 角色名称
+  value     String   @unique // 角色值(权限字符串)
+  remark    String? // 备注 
+  status    Int      @default(1) // 状态：1正常 0禁用
+  isDefault Boolean? @default(false) @map("default") // 是否默认角色
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  orderNo   Int      @default(0) @map("order_no") // 排序号
+
+  // 关联
+  users User[] @relation("UserRoles") // 角色用户多对多关系
+  menus Menu[] @relation("RoleMenus") // 角色菜单多对多关系
+
+  @@map("sys_role")
+}
+
+// 菜单表
+model Menu {
+  id          Int      @id @default(autoincrement())
+  parentId    Int?     @map("parent_id") // 父菜单ID
+  path        String? // 路由路径
+  name        String // 菜单名称
+  permission  String? // 权限标识
+  type        Int      @default(0) // 类型：0目录 1菜单 2按钮
+  icon        String?  @default("") // 图标
+  component   String? // 组件路径
+  keepAlive   Int      @default(0) @map("keep_alive") // 是否缓存：0缓存 1不缓存
+  show        Int      @default(1) // 是否显示：1显示 0隐藏
+  status      Int      @default(1) // 状态：1正常 0禁用
+  isExt       Int      @default(0) @map("is_ext") // 是否外链：0否 1是
+  extOpenMode Int      @default(1) @map("ext_open_mode") // 外链打开方式：1新窗口 2内嵌
+  activeMenu  String?  @map("active_menu") // 高亮菜单
+  orderNo     Int      @default(0) @map("order_no") // 排序号
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // 关联
+  parent   Menu?  @relation("MenuToMenu", fields: [parentId], references: [id])
+  children Menu[] @relation("MenuToMenu")
+  roles    Role[] @relation("RoleMenus") // 菜单角色多对多关系
+
+  @@map("sys_menu")
+}
+
+// 部门表
+model Dept {
+  id        Int      @id @default(autoincrement())
+  name      String // 部门名称
+  orderNo   Int      @default(0) @map("order_no") // 排序号
+  parentId  Int?     @map("parent_id") // 父部门ID
+  mpath     String?  @default("") // 部门层级路径
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // 关联
+  parent   Dept?  @relation("DeptToDept", fields: [parentId], references: [id])
+  children Dept[] @relation("DeptToDept")
+  users    User[] // 部门下的用户
+
+  @@map("sys_dept")
+}
+
+// 字典类型表
+model DictType {
+  id        Int      @id @default(autoincrement())
+  name      String // 字典名称
+  code      String   @unique // 字典编码
+  status    Int      @default(1) // 状态：1正常 0禁用
+  remark    String? // 备注
+  createBy  Int      @map("create_by") // 创建者
+  updateBy  Int      @map("update_by") // 更新者
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // 关联
+  items DictItem[] // 字典类型下的字典项
+
+  @@map("sys_dict_type")
+}
+
+// 字典项表
+model DictItem {
+  id        Int      @id @default(autoincrement())
+  typeId    Int?     @map("type_id") // 字典类型ID
+  label     String // 字典标签
+  value     String // 字典值
+  orderNo   Int?     @map("order_no") // 排序号
+  status    Int      @default(1) // 状态：1正常 0禁用
+  remark    String? // 备注
+  createBy  Int      @map("create_by") // 创建者
+  updateBy  Int      @map("update_by") // 更新者
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // 关联
+  dictType DictType? @relation(fields: [typeId], references: [id], onDelete: Cascade)
+
+  @@map("sys_dict_item")
+}
+
+// 系统配置表
+model Config {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique // 配置键
+  name      String // 配置名称
+  value     String? // 配置值
+  remark    String? // 备注
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("sys_config")
+}
+
+// 登录日志表
+model LoginLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id") // 用户ID
+  ip        String? // 登录IP
+  ua        String? // 用户代理
+  address   String? // 登录地址
+  provider  String? // 登录提供者
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // 关联
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sys_login_log")
+}

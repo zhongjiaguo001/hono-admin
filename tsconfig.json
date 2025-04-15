@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+
+    "baseUrl": "./src", // 将 src 设置为基准目录
+    "paths": {
+      "@/*": ["*"] // 定义别名规则：@/ 开头的路径映射到 src/ 下的同名路径
+    },
+  }
+}
