@@ -64,7 +64,6 @@ export interface UpdateUserDto {
  * 修改密码请求参数
  */
 export interface UpdatePasswordDto {
-  oldPassword: string;
   newPassword: string;
 }
 

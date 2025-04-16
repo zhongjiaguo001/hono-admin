@@ -46,7 +46,6 @@ export const updateUserSchema = z.object({
 
 // 修改密码验证模式
 export const updatePasswordSchema = z.object({
-  oldPassword: z.string().min(6, { message: "原密码长度至少为6个字符" }),
   newPassword: z
     .string()
     .min(6, { message: "新密码长度至少为6个字符" })

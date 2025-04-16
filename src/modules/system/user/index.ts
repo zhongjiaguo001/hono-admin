@@ -24,8 +24,10 @@ export function createUserModule() {
 
   // 公共路由 - 不需要额外权限
   router.get("/info", controller.getCurrentUser);
-  router.post(
-    "/password",
+
+  // 更新用户密码
+  router.patch(
+    "/:id/password",
     zodValidator("json", updatePasswordSchema),
     controller.updatePassword
   );
@@ -38,18 +40,21 @@ export function createUserModule() {
     controller.list
   );
 
+  // 根据ID获取用户信息
   router.get(
     "/info/:id",
     requirePermission("system:user:info"),
     controller.getById
   );
-  // src/modules/system/user/index.ts (继续)
+
+  // 根据用户名获取用户信息
   router.get(
     "/infoByUsername/:username",
     requirePermission("system:user:info"),
     controller.getByUsername
   );
 
+  // 创建用户
   router.post(
     "/",
     requirePermission("system:user:add"),
@@ -57,6 +62,7 @@ export function createUserModule() {
     controller.create
   );
 
+  // 更新用户
   router.post(
     "/update",
     requirePermission("system:user:update"),
@@ -64,12 +70,14 @@ export function createUserModule() {
     controller.update
   );
 
-  router.post(
-    "/delete",
+  // 删除用户
+  router.delete(
+    "/:id",
     requirePermission("system:user:delete"),
     controller.delete
   );
 
+  // 更新用户状态
   router.post(
     "/status",
     requirePermission("system:user:update"),
@@ -77,11 +85,10 @@ export function createUserModule() {
     controller.updateStatus
   );
 
-  router.get(
-    "/:id/roles",
-    requirePermission("system:user:info"),
-    controller.getUserRoles
-  );
+  // 获取用户角色 - 已从用户列表接口获取，无需单独调用
+  // 用户列表和用户详情接口已包含角色信息，前端可直接使用
+
+  // 设置用户角色
   router.post(
     "/:id/roles",
     requirePermission("system:user:update"),

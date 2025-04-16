@@ -1,9 +1,15 @@
-// src/db/prisma.ts  (这就是封装 prisma 的地方)
+// src/db/prisma.ts
 import { PrismaClient } from "@prisma/client";
 
-// 实例化 PrismaClient
-export const prisma = new PrismaClient();
-// 你可以在这里添加一些全局配置，例如日志
-// {
-//   log: ['query', 'info', 'warn', 'error'],
-// }
+// 创建全局的 PrismaClient 实例
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
+
+export const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient({
+    log: ["error"],
+  });
+
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;

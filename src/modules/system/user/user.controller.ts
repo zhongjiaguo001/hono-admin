@@ -186,19 +186,20 @@ export class UserController {
    */
   delete = async (c: Context) => {
     try {
-      const data = await c.req.json();
+      const id = c.req.param("id");
+      const ids = id.split(",").map(Number);
 
-      if (!data.ids || !Array.isArray(data.ids) || data.ids.length === 0) {
+      if (ids.some(isNaN)) {
         return c.json(
           {
             code: 400,
-            message: "ids参数不能为空",
+            message: "无效的用户ID格式",
           },
           400
         );
       }
 
-      await this.userService.delete(data.ids);
+      await this.userService.delete(ids);
 
       return c.json({
         code: 200,
@@ -224,11 +225,7 @@ export class UserController {
       const data = c.get("zod") as UpdatePasswordDto;
 
       const user = c.get("user");
-      await this.userService.updatePassword(
-        user.id,
-        data.oldPassword,
-        data.newPassword
-      );
+      await this.userService.updatePassword(user.id, data.newPassword);
 
       return c.json({
         code: 200,

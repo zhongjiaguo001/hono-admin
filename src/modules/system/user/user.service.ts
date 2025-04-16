@@ -1,5 +1,4 @@
 // src/modules/system/user/user.service.ts
-import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { redisUtils } from "@/utils/redis.utils";
 import { logger } from "@/utils/logger.utils"; // 假设有日志工具
@@ -11,7 +10,7 @@ import {
   PaginatedResult,
 } from "./user.types";
 
-const prisma = new PrismaClient();
+import { prisma } from "@/db/prisma";
 
 export class UserService {
   /**
@@ -231,11 +230,7 @@ export class UserService {
   /**
    * 更新用户密码
    */
-  async updatePassword(
-    userId: number,
-    oldPassword: string,
-    newPassword: string
-  ): Promise<boolean> {
+  async updatePassword(userId: number, newPassword: string): Promise<boolean> {
     try {
       // 获取用户
       const user = await prisma.user.findUnique({
@@ -244,12 +239,6 @@ export class UserService {
 
       if (!user) {
         throw new Error("用户不存在");
-      }
-
-      // 验证旧密码
-      const isValid = await bcrypt.compare(oldPassword, user.password);
-      if (!isValid) {
-        throw new Error("原密码错误");
       }
 
       // 生成新的密码盐和加密密码
