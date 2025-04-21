@@ -35,7 +35,7 @@ export function createUserModule() {
   // 需要权限的路由
   router.get(
     "/list",
-    requirePermission("system:user:list"),
+    requirePermission("system:user:query"),
     zodValidator("query", queryUserSchema),
     controller.list
   );

@@ -30,6 +30,12 @@ app.use("*", secureHeaders());
 app.use("*", prettyJSON());
 
 // 静态文件服务
+app.use("/uploads/*", async (c, next) => {
+  // 手动设置 CORS 头
+  c.header("Access-Control-Allow-Origin", config.cors.allowOrigins[0]);
+  c.header("Access-Control-Allow-Credentials", "true");
+  await next();
+});
 app.use("/uploads/*", serveStatic({ root: "./" }));
 
 // 操作日志记录 - 排除特定路径

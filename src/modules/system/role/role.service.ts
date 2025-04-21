@@ -220,7 +220,7 @@ export class RoleService {
       include: {
         menu: {
           select: {
-            perms: true,
+            permission: true,
           },
         },
       },
@@ -228,7 +228,7 @@ export class RoleService {
 
     // 提取权限标识并过滤掉空值
     const permissions = roleMenus
-      .map((rm) => rm.menu.perms)
+      .map((rm) => rm.menu.permission)
       .filter((perms) => perms !== null && perms !== undefined && perms !== "");
 
     // 返回去重后的权限列表

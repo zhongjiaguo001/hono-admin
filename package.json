@@ -1,6 +1,6 @@
 {
   "name": "hono-admin",
-  "type":"module",
+  "type": "module",
   "scripts": {
     "dev": "bun run --hot src/server.ts",
     "build": "bun build src/server.ts --outdir dist",
@@ -10,6 +10,7 @@
     "@hono/zod-validator": "^0.4.3",
     "@prisma/client": "^6.5.0",
     "@types/nodemailer": "^6.4.17",
+    "axios": "^1.8.4",
     "bcryptjs": "^3.0.2",
     "date-fns": "^4.1.0",
     "hono": "^4.7.5",

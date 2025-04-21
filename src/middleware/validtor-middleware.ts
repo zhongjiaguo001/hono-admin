@@ -32,10 +32,10 @@ import { Context, Next, MiddlewareHandler } from "hono";
 import { z, ZodError } from "zod";
 
 /**
- * 自定义Zod验证中间件，只返回第一个错误
+ * 自定义Zod验证中间件，支持参数验证
  */
 export function zodValidator<T extends z.ZodTypeAny>(
-  target: "json" | "form" | "query",
+  target: "json" | "form" | "query" | "param",
   schema: T
 ): MiddlewareHandler {
   return async (c: Context, next: Next) => {
@@ -48,6 +48,9 @@ export function zodValidator<T extends z.ZodTypeAny>(
         data = await c.req.parseBody();
       } else if (target === "query") {
         data = c.req.query();
+      } else if (target === "param") {
+        // 获取URL路径参数
+        data = c.req.param();
       }
 
       const validated = schema.parse(data);

@@ -8,65 +8,64 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 用户表
 model User {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique // 登录账号
-  password  String // 密码
-  psalt     String // 密码盐
-  nickname  String? // 用户昵称
-  avatar    String? // 头像
-  email     String?  @unique // 邮箱
-  phone     String? // 手机号
-  qq        String? // QQ号
-  remark    String? // 备注
-  status    Int      @default(1) // 状态：1正常 0禁用
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          Int       @id @default(autoincrement()) @map("user_id")
+  deptId      Int?      @map("dept_id") // 部门ID
+  username    String    @unique @map("user_name") // 用户账号
+  nickname    String    @map("nick_name") // 用户昵称
+  userType    String?   @default("00") @map("user_type") // 用户类型
+  email       String?   @default("") // 邮箱
+  phonenumber String?   @default("") // 手机号码
+  sex         String?   @default("0") // 性别（0男 1女 2未知）
+  avatar      String?   @default("") // 头像地址
+  password    String // 密码
+  psalt       String // 密码盐
+  status      String    @default("0") // 状态（0正常 1停用）
+  delFlag     String    @default("0") @map("del_flag") // 删除标志
+  loginIp     String?   @default("") @map("login_ip") // 最后登录IP
+  loginDate   DateTime? @map("login_date") // 最后登录时间
+  createBy    String    @default("") @map("create_by") // 创建者 
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updateBy    String    @default("") @map("update_by") // 更新者
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  remark      String?   @map("remark") // 备注
 
-  // 关联
-  deptId    Int?           @map("dept_id") // 部门ID
-  dept      Dept?          @relation(fields: [deptId], references: [id]) // 用户所属部门
+  // 关系
+  dept Dept? @relation(fields: [deptId], references: [id])
+
   userRoles UserRole[] // 用户角色关联
-  loginLogs LoginLog[] // 用户登录日志
-  opLogs    OperationLog[] // 用户操作日志
-  uploads   Upload[] // 用户上传文件
+  userPosts UserPost[] // 用户岗位关联
+  loginLogs LoginLog[] // 登录日志
+  operLogs  OperLog[] // 操作日志
+  uploads   Upload[] // 上传文件
+
+  sessions Session[] // 用户会话关联
 
   @@map("sys_user")
 }
 
-// 角色表
 model Role {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique // 角色名称
-  value     String   @unique // 角色值(权限字符串)
-  remark    String? // 备注 
-  status    Int      @default(1) // 状态：1正常 0禁用
-  isDefault Boolean? @default(false) @map("default") // 是否默认角色
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  orderNo   Int      @default(0) @map("order_no") // 排序号
+  id                Int      @id @default(autoincrement()) @map("role_id")
+  name              String   @map("role_name") // 角色名称 
+  key               String   @unique @map("role_key") // 角色权限字符串
+  orderNo           Int      @default(0) @map("role_sort") // 显示顺序
+  dataScope         String   @default("1") @map("data_scope") // 数据范围
+  menuCheckStrictly Int      @default(1) @map("menu_check_strictly") // 菜单树选择项是否关联显示
+  deptCheckStrictly Int      @default(1) @map("dept_check_strictly") // 部门树选择项是否关联显示
+  status            String   @default("0") // 状态（0正常 1停用）
+  delFlag           String   @default("0") @map("del_flag") // 删除标志
+  createBy          String   @default("") @map("create_by") // 创建者
+  createdAt         DateTime @default(now()) @map("created_at")
+  updateBy          String   @default("") @map("update_by") // 更新者
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  remark            String?  @map("remark") // 备注
 
-  // 关联
+  // 关系
   userRoles UserRole[] // 角色用户关联
   roleMenus RoleMenu[] // 角色菜单关联
   roleDepts RoleDept[] // 角色部门数据权限关联
 
   @@map("sys_role")
-}
-
-// 用户角色关系表
-model UserRole {
-  userId    Int      @map("user_id")
-  roleId    Int      @map("role_id")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  // 关联
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
-  @@id([userId, roleId])
-  @@map("sys_user_role")
 }
 
 // 菜单表
@@ -98,144 +97,172 @@ model Menu {
   @@map("sys_menu")
 }
 
-// 角色菜单关系表
-model RoleMenu {
-  roleId    Int      @map("role_id")
-  menuId    Int      @map("menu_id")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  // 关联
-  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
-
-  @@id([roleId, menuId])
-  @@map("sys_role_menu")
-}
-
 // 部门表
 model Dept {
   id        Int      @id @default(autoincrement())
-  name      String // 部门名称
-  orderNo   Int      @default(0) @map("order_no") // 排序号
   parentId  Int?     @map("parent_id") // 父部门ID
-  mpath     String?  @default("") // 部门层级路径
+  ancestors String?  @default("") @map("ancestors") // 祖级列表
+  name      String   @map("dept_name") // 部门名称
+  orderNo   Int      @default(0) @map("order_num") // 显示顺序
+  leader    String?  @map("leader") // 负责人
+  phone     String?  @map("phone") // 联系电话
+  email     String?  @map("email") // 邮箱
+  status    String   @default("0") @map("status") // 状态（0正常 1停用）
+  delFlag   String   @default("0") @map("del_flag") // 删除标志
+  createBy  String   @default("") @map("create_by") // 创建者
   createdAt DateTime @default(now()) @map("created_at")
+  updateBy  String   @default("") @map("update_by") // 更新者
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // 关联
+  // 关系
   parent    Dept?      @relation("DeptToDept", fields: [parentId], references: [id])
   children  Dept[]     @relation("DeptToDept")
-  users     User[] // 部门下的用户
-  roleDepts RoleDept[] // 部门数据权限关联
+  users     User[]
+  roleDepts RoleDept[]
 
   @@map("sys_dept")
 }
 
-// 角色部门数据权限表
-model RoleDept {
-  roleId    Int      @map("role_id")
-  deptId    Int      @map("dept_id")
+// 岗位表
+model Post {
+  id        Int      @id @default(autoincrement()) @map("post_id")
+  code      String   @map("post_code") // 岗位编码
+  name      String   @map("post_name") // 岗位名称
+  sort      Int      @map("post_sort") // 显示顺序
+  status    String   @map("status") // 状态（0正常 1停用）
+  createBy  String   @default("") @map("create_by") // 创建者
   createdAt DateTime @default(now()) @map("created_at")
+  updateBy  String   @default("") @map("update_by") // 更新者
+  updatedAt DateTime @updatedAt @map("updated_at")
+  remark    String?  @map("remark") // 备注
 
-  // 关联
-  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  dept Dept @relation(fields: [deptId], references: [id], onDelete: Cascade)
+  // 关系
+  userPosts UserPost[] // 用户岗位关联
 
-  @@id([roleId, deptId])
-  @@map("sys_role_dept")
+  @@map("sys_post")
 }
 
 // 字典类型表
 model DictType {
-  id        Int      @id @default(autoincrement())
-  name      String // 字典名称
-  code      String   @unique // 字典编码
-  status    Int      @default(1) // 状态：1正常 0禁用
-  remark    String? // 备注
-  createBy  Int      @map("create_by") // 创建者
-  updateBy  Int      @map("update_by") // 更新者
+  id        Int      @id @default(autoincrement()) @map("dict_id")
+  name      String   @map("dict_name") // 字典名称
+  type      String   @unique @map("dict_type") // 字典类型
+  status    String   @default("0") @map("status") // 状态（0正常 1停用）
+  createBy  String   @default("") @map("create_by") // 创建者
   createdAt DateTime @default(now()) @map("created_at")
+  updateBy  String   @default("") @map("update_by") // 更新者
   updatedAt DateTime @updatedAt @map("updated_at")
+  remark    String?  @map("remark") // 备注
 
-  // 关联
-  items DictItem[] // 字典类型下的字典项
+  // 关系
+  dictData DictData[] // 字典数据
 
   @@map("sys_dict_type")
 }
 
-// 字典项表
-model DictItem {
-  id        Int      @id @default(autoincrement())
-  typeId    Int?     @map("type_id") // 字典类型ID
-  label     String // 字典标签
-  value     String // 字典值
-  orderNo   Int?     @map("order_no") // 排序号
-  status    Int      @default(1) // 状态：1正常 0禁用
-  remark    String? // 备注
-  createBy  Int      @map("create_by") // 创建者
-  updateBy  Int      @map("update_by") // 更新者
+model DictData {
+  id        Int      @id @default(autoincrement()) @map("dict_code")
+  sort      Int      @default(0) @map("dict_sort") // 字典排序
+  label     String   @map("dict_label") // 字典标签
+  value     String   @map("dict_value") // 字典键值
+  dictType  String   @map("dict_type") // 字典类型
+  cssClass  String?  @map("css_class") // 样式属性
+  listClass String?  @map("list_class") // 表格回显样式
+  isDefault String   @default("N") @map("is_default") // 是否默认（Y是 N否）
+  status    String   @default("0") @map("status") // 状态（0正常 1停用）
+  createBy  String   @default("") @map("create_by") // 创建者
   createdAt DateTime @default(now()) @map("created_at")
+  updateBy  String   @default("") @map("update_by") // 更新者
   updatedAt DateTime @updatedAt @map("updated_at")
+  remark    String?  @map("remark") // 备注
 
-  // 关联
-  dictType DictType? @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  // 关系
+  type DictType? @relation(fields: [dictType], references: [type])
 
-  @@map("sys_dict_item")
+  @@map("sys_dict_data")
 }
 
 // 系统配置表
 model Config {
-  id        Int      @id @default(autoincrement())
-  key       String   @unique // 配置键
-  name      String // 配置名称
-  value     String? // 配置值
-  remark    String? // 备注
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id         Int      @id @default(autoincrement()) @map("config_id")
+  name       String   @map("config_name") // 参数名称
+  key        String   @unique @map("config_key") // 参数键名
+  value      String   @map("config_value") // 参数键值
+  configType String   @default("N") @map("config_type") // 系统内置（Y是 N否）
+  createBy   String   @default("") @map("create_by") // 创建者
+  createdAt  DateTime @default(now()) @map("created_at")
+  updateBy   String   @default("") @map("update_by") // 更新者
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  remark     String?  @map("remark") // 备注
 
   @@map("sys_config")
 }
 
 // 登录日志表
 model LoginLog {
-  id        Int      @id @default(autoincrement())
-  userId    Int?     @map("user_id") // 用户ID
-  ip        String? // 登录IP
-  ua        String? // 用户代理
-  address   String? // 登录地址
-  provider  String? // 登录提供者
-  status    Int      @default(1) // 状态：1成功 0失败
-  message   String? // 登录消息
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            Int      @id @default(autoincrement()) @map("info_id")
+  userId        Int?     @map("user_id") // 用户ID
+  username      String   @default("") @map("user_name") // 用户账号
+  ipaddr        String   @default("") // 登录IP地址
+  loginLocation String   @default("") @map("login_location") // 登录地点
+  browser       String   @default("") // 浏览器类型
+  os            String   @default("") // 操作系统
+  status        String   @default("0") // 登录状态（0成功 1失败）
+  msg           String   @default("") // 提示消息
+  loginTime     DateTime @map("login_time") // 访问时间
 
-  // 关联
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 关系
+  user User? @relation(fields: [userId], references: [id])
 
-  @@map("sys_login_log")
+  @@index([status], name: "idx_login_status")
+  @@index([loginTime], name: "idx_login_time")
+  @@map("sys_logininfor")
 }
 
 // 操作日志表
-model OperationLog {
-  id          Int      @id @default(autoincrement())
-  userId      Int?     @map("user_id") // 操作用户ID
-  module      String? // 操作模块
-  action      String? // 操作类型
-  ip          String? // 操作IP
-  path        String // 请求路径
-  method      String // 请求方法
-  params      String?  @db.Text // 请求参数
-  result      String?  @db.Text // 操作结果
-  status      Int // 操作状态
-  duration    Int? // 执行时间(ms)
-  description String? // 操作描述
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+model OperLog {
+  id            Int       @id @default(autoincrement()) @map("oper_id")
+  title         String    @default("") // 模块标题
+  businessType  Int       @default(0) @map("business_type") // 业务类型
+  method        String    @default("") // 方法名称
+  requestMethod String    @default("") @map("request_method") // 请求方式
+  operatorType  Int       @default(0) @map("operator_type") // 操作类别
+  operName      String    @default("") @map("oper_name") // 操作人员
+  deptName      String    @default("") @map("dept_name") // 部门名称
+  operUrl       String    @default("") @map("oper_url") // 请求URL
+  operIp        String    @default("") @map("oper_ip") // 主机地址
+  operLocation  String    @default("") @map("oper_location") // 操作地点
+  operParam     String    @default("") @map("oper_param") // 请求参数
+  jsonResult    String    @default("") @map("json_result") // 返回参数
+  status        Int       @default(0) // 操作状态（0正常 1异常）
+  errorMsg      String    @default("") @map("error_msg") // 错误消息
+  operTime      DateTime? @map("oper_time") // 操作时间
+  costTime      Int       @default(0) @map("cost_time") // 消耗时间
 
-  // 关联
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  // 关系
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id])
 
-  @@map("sys_operation_log")
+  @@index([businessType], name: "idx_oper_bt")
+  @@index([status], name: "idx_oper_status")
+  @@index([operTime], name: "idx_oper_time")
+  @@map("sys_oper_log")
+}
+
+// 通知公共表
+model Notice {
+  id        Int      @id @default(autoincrement()) @map("notice_id")
+  title     String   @map("notice_title") // 公告标题
+  type      String   @map("notice_type") // 公告类型（1通知 2公告）
+  content   Bytes?   @map("notice_content") // 公告内容
+  status    String   @default("0") @map("status") // 公告状态（0正常 1关闭）
+  createBy  String   @default("") @map("create_by") // 创建者
+  createdAt DateTime @default(now()) @map("created_at")
+  updateBy  String   @default("") @map("update_by") // 更新者
+  updatedAt DateTime @updatedAt @map("updated_at")
+  remark    String?  @map("remark") // 备注
+
+  @@map("sys_notice")
 }
 
 // 文件上传表
@@ -253,4 +280,85 @@ model Upload {
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@map("sys_upload")
+}
+
+model UserRole {
+  userId    Int      @map("user_id")
+  roleId    Int      @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("sys_user_role")
+}
+
+model RoleMenu {
+  roleId    Int      @map("role_id")
+  menuId    Int      @map("menu_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, menuId])
+  @@map("sys_role_menu")
+}
+
+model RoleDept {
+  roleId    Int      @map("role_id")
+  deptId    Int      @map("dept_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  dept Dept @relation(fields: [deptId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, deptId])
+  @@map("sys_role_dept")
+}
+
+model UserPost {
+  userId Int @map("user_id")
+  postId Int @map("post_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+  @@map("sys_user_post")
+}
+
+// 会话表
+model Session {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  title     String // 会话标题
+  modelId   String?  @map("model_id") // 使用的模型ID
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // 关联
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[] // 关联消息
+
+  @@map("ai_session")
+}
+
+// 消息表
+model Message {
+  id        Int      @id @default(autoincrement())
+  sessionId Int      @map("session_id") // 所属会话ID
+  content   String   @db.Text // 消息内容
+  role      String // 角色：user/assistant/system
+  fileUrl   String?  @map("file_url") // 文件URL（如有）
+  mimeType  String?  @map("mime_type") // 文件类型
+  tokens    Int? // 令牌数量
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // 关联
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("ai_message")
 }
