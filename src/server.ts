@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/db/prisma";
 import { redisUtils } from "./utils/redis.utils";
 import { logger } from "@/utils/logger.utils";
 import { config } from "@/config";
@@ -6,9 +6,6 @@ import app from "./app";
 
 const PORT = config.app.port;
 const HOST = config.app.host;
-
-// 初始化数据库链接
-const prisma = new PrismaClient();
 
 // 启动服务器前进行连接检查
 async function startServer() {

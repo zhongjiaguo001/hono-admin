@@ -2,13 +2,8 @@
 import bcrypt from "bcryptjs";
 import { redisUtils } from "@/utils/redis.utils";
 import { logger } from "@/utils/logger.utils"; // 假设有日志工具
-import {
-  UserInfo,
-  CreateUserDto,
-  UpdateUserDto,
-  UserQueryParams,
-  PaginatedResult,
-} from "./user.types";
+import { UserInfo, UserQueryParams, PaginatedResult } from "./user.types";
+import type { CreateUserDto, UpdateUserDto } from "./user.schema";
 
 import { prisma } from "@/db/prisma";
 
@@ -41,7 +36,7 @@ export class UserService {
       const roles = user.userRoles.map((ur) => ({
         id: ur.role.id,
         name: ur.role.name,
-        value: ur.role.value,
+        key: ur.role.key,
       }));
 
       return {
@@ -104,10 +99,11 @@ export class UserService {
 
       // 使用事务创建用户及关联角色
       const result = await prisma.$transaction(async (tx) => {
-        // 创建用户
+        // 创建用户 - 确保提供所有必填字段
         const user = await tx.user.create({
           data: {
             username,
+            nickname: rest.nickname || username, // 确保nickname字段有值
             password: hashedPassword,
             psalt,
             deptId,
@@ -267,9 +263,9 @@ export class UserService {
   /**
    * 更新用户状态
    */
-  async updateStatus(id: number, status: number): Promise<boolean> {
+  async updateStatus(id: number, status: string): Promise<boolean> {
     try {
-      if (status !== 0 && status !== 1) {
+      if (status !== "0" && status !== "1") {
         throw new Error("状态值无效");
       }
 
@@ -293,7 +289,7 @@ export class UserService {
    */
   async getUserRoles(
     userId: number
-  ): Promise<{ id: number; name: string; value: string }[]> {
+  ): Promise<{ id: number; name: string; key: string }[]> {
     try {
       const userRoles = await prisma.userRole.findMany({
         where: { userId },
@@ -303,7 +299,7 @@ export class UserService {
       return userRoles.map((ur) => ({
         id: ur.role.id,
         name: ur.role.name,
-        value: ur.role.value,
+        key: ur.role.key,
       }));
     } catch (error) {
       logger?.error("获取用户角色失败:", error);
@@ -431,7 +427,7 @@ export class UserService {
           roles: user.userRoles.map((ur) => ({
             id: ur.role.id,
             name: ur.role.name,
-            value: ur.role.value,
+            key: ur.role.key,
           })),
         };
       });
@@ -446,6 +442,105 @@ export class UserService {
       };
     } catch (error) {
       logger?.error("分页查询用户失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 查询所有用户
+   */
+  async findAll(params: Partial<UserQueryParams> = {}): Promise<UserInfo[]> {
+    try {
+      const { username, status, deptId, startTime, endTime } = params;
+
+      // 构建查询条件
+      const where: any = {};
+
+      if (username) {
+        where.username = { contains: username };
+      }
+
+      if (status !== undefined && status !== null) {
+        where.status = Number(status);
+      }
+
+      if (deptId) {
+        where.deptId = Number(deptId);
+      }
+
+      if (startTime && endTime) {
+        where.createdAt = {
+          gte: new Date(startTime),
+          lte: new Date(endTime),
+        };
+      }
+
+      // 执行查询
+      const list = await prisma.user.findMany({
+        where,
+        include: {
+          dept: true,
+          userRoles: {
+            include: {
+              role: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      // 处理返回数据，移除敏感信息
+      const users = list.map((user) => {
+        const { password, psalt, ...rest } = user;
+        return {
+          ...rest,
+          dept: user.dept
+            ? {
+                id: user.dept.id,
+                name: user.dept.name,
+              }
+            : undefined,
+          roles: user.userRoles.map((ur) => ({
+            id: ur.role.id,
+            name: ur.role.name,
+            key: ur.role.key,
+          })),
+        };
+      });
+
+      return users as unknown as UserInfo[];
+    } catch (error) {
+      logger?.error("查询用户列表失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 验证用户密码
+   * @param userId 用户ID
+   * @param password 待验证的密码
+   * @returns 密码是否正确
+   */
+  async verifyPassword(userId: number, password: string): Promise<boolean> {
+    try {
+      // 获取用户信息（包含密码和盐）
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          password: true,
+          psalt: true,
+        },
+      });
+
+      if (!user) {
+        throw new Error("用户不存在");
+      }
+
+      // 验证密码
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      return isPasswordValid;
+    } catch (error) {
+      logger?.error("验证用户密码失败:", error);
       throw error;
     }
   }

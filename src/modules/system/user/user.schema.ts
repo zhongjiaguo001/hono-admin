@@ -22,7 +22,7 @@ export const createUserSchema = z.object({
   avatar: z.string().optional().nullable(),
   remark: z.string().optional().nullable(),
   deptId: z.number().optional().nullable(),
-  status: z.number().default(1),
+  status: z.string().default("1"),
   roleIds: z.array(z.number()).optional(),
 });
 
@@ -40,12 +40,13 @@ export const updateUserSchema = z.object({
   avatar: z.string().optional().nullable(),
   remark: z.string().optional().nullable(),
   deptId: z.number().optional().nullable(),
-  status: z.number().optional(),
+  status: z.string().optional(),
   roleIds: z.array(z.number()).optional(),
 });
 
-// 修改密码验证模式
-export const updatePasswordSchema = z.object({
+// 重置密码
+export const resetPasswordSchema = z.object({
+  id: z.number({ required_error: "用户ID不能为空" }),
   newPassword: z
     .string()
     .min(6, { message: "新密码长度至少为6个字符" })
@@ -56,8 +57,8 @@ export const updatePasswordSchema = z.object({
 export const updateUserStatusSchema = z.object({
   id: z.number({ required_error: "用户ID不能为空" }),
   status: z
-    .number({ required_error: "状态不能为空" })
-    .refine((val) => val === 0 || val === 1, {
+    .string({ required_error: "状态不能为空" })
+    .refine((val) => val === "0" || val === "1", {
       message: "状态只能为0或1",
     }),
 });
@@ -80,9 +81,7 @@ export const queryUserSchema = z.object({
     .or(z.number())
     .optional()
     .nullable()
-    .transform((val) =>
-      val === undefined || val === null ? null : Number(val)
-    ),
+    .transform((val) => (val === undefined || val === null ? null : val)),
   deptId: z
     .string()
     .or(z.number())
@@ -94,3 +93,25 @@ export const queryUserSchema = z.object({
   startTime: z.string().optional(),
   endTime: z.string().optional(),
 });
+
+// 用户个人信息更新验证模式
+export const updateProfileSchema = z.object({
+  nickname: z.string(),
+  email: z.string().email({ message: "请输入有效的邮箱地址" }).nullable(),
+  phonenumber: z.string().nullable(),
+  sex: z.string().min(0).max(2).optional(),
+});
+
+// 修改密码验证模式
+export const updatePasswordSchema = z.object({
+  oldPassword: z.string().min(1, { message: "旧密码不能为空" }),
+  newPassword: z
+    .string()
+    .min(6, { message: "新密码长度至少为6个字符" })
+    .max(20, { message: "新密码长度不能超过20个字符" }),
+});
+
+export type ResetPasswordDto = z.infer<typeof resetPasswordSchema>;
+export type UpdatePasswordDto = z.infer<typeof updatePasswordSchema>;
+export type CreateUserDto = z.infer<typeof createUserSchema>;
+export type UpdateUserDto = z.infer<typeof updateUserSchema>;

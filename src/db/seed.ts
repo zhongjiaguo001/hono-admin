@@ -1,9 +1,7 @@
 // src/db/seed.ts
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/db/prisma";
 import * as bcrypt from "bcryptjs";
 import { logger } from "@/utils/logger.utils";
-
-const prisma = new PrismaClient();
 
 /**
  * 创建初始数据

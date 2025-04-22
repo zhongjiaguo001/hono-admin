@@ -1,5 +1,5 @@
 // src/modules/auth/auth.service.ts
-import { PrismaClient } from "@prisma/client";
+
 import * as bcrypt from "bcryptjs";
 import * as crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
@@ -7,8 +7,7 @@ import { sign, verify } from "hono/jwt";
 import { redisUtils } from "@/utils/redis.utils";
 import type { LoginDto } from "./auth.schema";
 import { logger } from "@/utils/logger.utils";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/db/prisma";
 
 export class AuthService {
   private readonly JWT_SECRET = process.env.JWT_SECRET as string;
@@ -240,39 +239,33 @@ export class AuthService {
         },
       });
 
-      // 查询菜单条件
-      let menus;
-      if (isAdmin) {
-        // 管理员可查看所有正常状态的菜单
-        menus = await prisma.menu.findMany({
-          where: { status: 1 },
-          orderBy: { orderNo: "asc" },
-        });
-      } else {
-        // 非管理员只能查看自己有权限的菜单
-        const menuIds = (
-          await prisma.roleMenu.findMany({
-            where: { roleId: { in: roleIds } },
-            select: { menuId: true },
-          })
-        ).map((rm) => rm.menuId);
-
-        // 去重菜单ID
-        const uniqueMenuIds = [...new Set(menuIds)];
-
-        menus = await prisma.menu.findMany({
-          where: {
+      // 查询菜单条件 - 添加type条件，排除按钮类型(type=2)
+      const where = isAdmin
+        ? {
             status: 1,
+            type: { in: [0, 1] }, // 只获取目录(0)和菜单(1)，排除按钮(2)
+          }
+        : {
+            status: 1,
+            type: { in: [0, 1] }, // 只获取目录(0)和菜单(1)，排除按钮(2)
             id: {
-              in: uniqueMenuIds,
+              in: (
+                await prisma.roleMenu.findMany({
+                  where: { roleId: { in: roleIds } },
+                  select: { menuId: true },
+                })
+              ).map((rm) => rm.menuId),
             },
-          },
-          orderBy: { orderNo: "asc" },
-        });
-      }
+          };
 
-      // 构建路由树
-      return this.buildMenuTree(menus, 0);
+      // 查询所有有效菜单
+      const menus = await prisma.menu.findMany({
+        where,
+        orderBy: { orderNo: "asc" },
+      });
+
+      // 构建路由树 - 从顶级菜单开始构建
+      return this.buildMenuTree(menus, null);
     } catch (error) {
       logger.error("获取用户路由失败:", error);
       throw error;
@@ -281,12 +274,19 @@ export class AuthService {
 
   /**
    * 构建菜单树
+   * @param menus 所有菜单列表
+   * @param parentId 父级ID，顶级菜单传入null或0
    */
-  private buildMenuTree(menus: any[], parentId: number) {
+  private buildMenuTree(menus: any[], parentId: number | null) {
     const result: any[] = [];
 
     menus.forEach((menu) => {
-      if (menu.parentId === parentId) {
+      // 兼容parentId为null或0的情况
+      if (
+        (parentId === null &&
+          (menu.parentId === null || menu.parentId === 0)) ||
+        menu.parentId === parentId
+      ) {
         const item: any = { ...menu };
 
         // 递归构建子菜单

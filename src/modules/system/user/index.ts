@@ -10,6 +10,8 @@ import {
   updatePasswordSchema,
   updateUserStatusSchema,
   queryUserSchema,
+  updateProfileSchema,
+  resetPasswordSchema,
 } from "./user.schema";
 
 // 创建用户模块路由
@@ -20,19 +22,7 @@ export function createUserModule() {
   // 应用认证中间件
   router.use("*", authMiddleware);
 
-  // 注册路由
-
-  // 公共路由 - 不需要额外权限
-  router.get("/info", controller.getCurrentUser);
-
-  // 更新用户密码
-  router.patch(
-    "/:id/password",
-    zodValidator("json", updatePasswordSchema),
-    controller.updatePassword
-  );
-
-  // 需要权限的路由
+  // 获取用户列表
   router.get(
     "/list",
     requirePermission("system:user:query"),
@@ -40,21 +30,30 @@ export function createUserModule() {
     controller.list
   );
 
+  // 获取当前登录用户个人信息
+  router.get("/profile", controller.getProfile);
+
   // 根据ID获取用户信息
-  router.get(
-    "/info/:id",
-    requirePermission("system:user:info"),
-    controller.getById
+  router.get("/:id", requirePermission("system:user:info"), controller.getById);
+
+  // 修改当前登录用户个人信息
+  router.put(
+    "/profile",
+    zodValidator("json", updateProfileSchema),
+    controller.updateProfile
   );
 
-  // 根据用户名获取用户信息
-  router.get(
-    "/infoByUsername/:username",
-    requirePermission("system:user:info"),
-    controller.getByUsername
+  // 修改当前登录用户密码
+  router.put(
+    "/updatePwd",
+    zodValidator("json", updatePasswordSchema),
+    controller.updatePassword
   );
 
-  // 创建用户
+  // 修改当前登录用户头像
+  router.put("/avatar", controller.updateAvatar);
+
+  // 新增用户
   router.post(
     "/",
     requirePermission("system:user:add"),
@@ -62,9 +61,9 @@ export function createUserModule() {
     controller.create
   );
 
-  // 更新用户
-  router.post(
-    "/update",
+  // 修改用户
+  router.put(
+    "/",
     requirePermission("system:user:update"),
     zodValidator("json", updateUserSchema),
     controller.update
@@ -77,29 +76,60 @@ export function createUserModule() {
     controller.delete
   );
 
-  // 更新用户状态
-  router.post(
-    "/status",
+  // 重置用户密码
+  router.put(
+    "/resetPwd",
+    zodValidator("json", resetPasswordSchema),
+    controller.resetPassword
+  );
+
+  // 修改用户状态（启用/禁用）
+  router.put(
+    "/changeStatus",
     requirePermission("system:user:update"),
     zodValidator("json", updateUserStatusSchema),
     controller.updateStatus
   );
 
-  // 获取用户角色 - 已从用户列表接口获取，无需单独调用
-  // 用户列表和用户详情接口已包含角色信息，前端可直接使用
+  // 获取用户关联的角色信息
+  router.get(
+    "/authRole/:id",
+    requirePermission("system:user:query"),
+    controller.getUserRoles
+  );
 
-  // 设置用户角色
-  router.post(
-    "/:id/roles",
+  // 给用户分配角色
+  router.put(
+    "/authRole",
     requirePermission("system:user:update"),
     controller.setUserRoles
+  );
+
+  // 导入用户数据
+  router.post(
+    "/importData",
+    requirePermission("system:user:import"),
+    controller.importData
+  );
+
+  // 下载用户导入模板
+  router.post(
+    "/importTemplate",
+    requirePermission("system:user:import"),
+    controller.importTemplate
+  );
+
+  // 导出用户数据
+  router.post(
+    "/export",
+    requirePermission("system:user:export"),
+    controller.export
   );
 
   return router;
 }
 
 // 导出类型和Schema，方便其他模块引用
-export * from "./user.types";
 export * from "./user.schema";
 export * from "./user.service";
 export * from "./user.controller";
