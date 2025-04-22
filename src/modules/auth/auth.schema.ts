@@ -11,3 +11,5 @@ export const loginSchema = z.object({
     .length(4, "验证码必须是4位")
     .regex(/^\d+$/, "验证码必须是数字"),
 });
+
+export type LoginDto = z.infer<typeof loginSchema>;

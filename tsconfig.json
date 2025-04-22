@@ -1,13 +1,25 @@
 {
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "node",
     "esModuleInterop": true,
     "strict": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "hono/jsx",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    // "jsx": "react-jsx",
+    // "jsxImportSource": "hono/jsx",
+    "outDir": "dist",
+    "declaration": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
 
-    "baseUrl": "./src", // 将 src 设置为基准目录
+    "baseUrl": "./src",
     "paths": {
-      "@/*": ["*"] // 定义别名规则：@/ 开头的路径映射到 src/ 下的同名路径
+      "@/*": ["*"]
     },
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

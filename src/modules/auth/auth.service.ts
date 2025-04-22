@@ -5,7 +5,8 @@ import * as crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { sign, verify } from "hono/jwt";
 import { redisUtils } from "@/utils/redis.utils";
-import { JwtPayload, LoginDto } from "./auth.types";
+import type { LoginDto } from "./auth.schema";
+import { logger } from "@/utils/logger.utils";
 
 const prisma = new PrismaClient();
 
@@ -79,7 +80,7 @@ export class AuthService {
     const now = Math.floor(Date.now() / 1000);
     const exp = now + this.TOKEN_EXPIRATION_SECONDS;
 
-    const payload: JwtPayload = {
+    const payload = {
       jti,
       userId: user.id,
       username: user.username,
@@ -105,15 +106,200 @@ export class AuthService {
    */
   async logout(token: string): Promise<void> {
     try {
-      const payload = (await verify(
-        token,
-        this.JWT_SECRET
-      )) as unknown as JwtPayload;
+      const payload = await verify(token, this.JWT_SECRET);
       const redisKey = `user:${payload.userId}`;
       await redisUtils.del(redisKey);
     } catch (error) {
       throw new Error("退出登录失败");
     }
+  }
+
+  /**
+   * 获取用户信息（包括权限和角色）
+   */
+  async getUserInfo(userId: number) {
+    try {
+      // 查询用户基本信息
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          username: true,
+          nickname: true,
+          avatar: true,
+          email: true,
+          status: true,
+          deptId: true,
+          userRoles: {
+            include: {
+              role: true,
+            },
+          },
+        },
+      });
+
+      if (!user) {
+        throw new Error("用户不存在");
+      }
+
+      // 获取用户角色
+      const roles = user.userRoles.map((ur) => ur.role.key);
+
+      // 获取用户菜单权限
+      const menuPermissions = await this.getUserPermissions(userId);
+
+      // 返回用户信息
+      return {
+        user: {
+          id: user.id,
+          username: user.username,
+          nickname: user.nickname,
+          avatar: user.avatar,
+          email: user.email,
+          status: user.status,
+        },
+        roles,
+        permissions: menuPermissions,
+      };
+    } catch (error) {
+      logger.error("获取用户信息失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取用户权限列表
+   */
+  async getUserPermissions(userId: number) {
+    try {
+      // 获取用户角色ID列表
+      const userRoles = await prisma.userRole.findMany({
+        where: { userId },
+        select: { roleId: true },
+      });
+
+      const roleIds = userRoles.map((ur) => ur.roleId);
+
+      // 管理员角色判断
+      const isAdmin = await prisma.role.findFirst({
+        where: {
+          id: { in: roleIds },
+          key: "admin",
+        },
+      });
+
+      // 如果是管理员，获取所有菜单权限
+      if (isAdmin) {
+        const allMenus = await prisma.menu.findMany({
+          where: {
+            AND: [{ permission: { not: null } }, { permission: { not: "" } }],
+          },
+          select: { permission: true },
+        });
+
+        // 提取所有权限标识
+        return allMenus.map((menu) => menu.permission).filter(Boolean);
+      }
+
+      // 非管理员，获取角色对应的菜单权限
+      const roleMenus = await prisma.roleMenu.findMany({
+        where: { roleId: { in: roleIds } },
+        include: { menu: true },
+      });
+
+      // 提取权限标识并去重
+      const permissions = roleMenus
+        .map((rm) => rm.menu.permission)
+        .filter(Boolean);
+
+      return [...new Set(permissions)];
+    } catch (error) {
+      logger.error("获取用户权限失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取用户路由菜单
+   */
+  async getUserRouters(userId: number) {
+    try {
+      // 获取用户角色ID列表
+      const userRoles = await prisma.userRole.findMany({
+        where: { userId },
+        select: { roleId: true },
+      });
+
+      const roleIds = userRoles.map((ur) => ur.roleId);
+
+      // 管理员角色判断
+      const isAdmin = await prisma.role.findFirst({
+        where: {
+          id: { in: roleIds },
+          key: "admin",
+        },
+      });
+
+      // 查询菜单条件
+      let menus;
+      if (isAdmin) {
+        // 管理员可查看所有正常状态的菜单
+        menus = await prisma.menu.findMany({
+          where: { status: 1 },
+          orderBy: { orderNo: "asc" },
+        });
+      } else {
+        // 非管理员只能查看自己有权限的菜单
+        const menuIds = (
+          await prisma.roleMenu.findMany({
+            where: { roleId: { in: roleIds } },
+            select: { menuId: true },
+          })
+        ).map((rm) => rm.menuId);
+
+        // 去重菜单ID
+        const uniqueMenuIds = [...new Set(menuIds)];
+
+        menus = await prisma.menu.findMany({
+          where: {
+            status: 1,
+            id: {
+              in: uniqueMenuIds,
+            },
+          },
+          orderBy: { orderNo: "asc" },
+        });
+      }
+
+      // 构建路由树
+      return this.buildMenuTree(menus, 0);
+    } catch (error) {
+      logger.error("获取用户路由失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 构建菜单树
+   */
+  private buildMenuTree(menus: any[], parentId: number) {
+    const result: any[] = [];
+
+    menus.forEach((menu) => {
+      if (menu.parentId === parentId) {
+        const item: any = { ...menu };
+
+        // 递归构建子菜单
+        const children = this.buildMenuTree(menus, menu.id);
+        if (children.length > 0) {
+          item.children = children;
+        }
+
+        result.push(item);
+      }
+    });
+
+    return result;
   }
 
   /**
