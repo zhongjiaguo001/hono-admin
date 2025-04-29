@@ -1,9 +1,9 @@
 // src/modules/system/user/index.ts
 import { Hono } from "hono";
-import { zodValidator } from "@/middleware/validtor-middleware";
+import { zodValidator, authMiddleware } from "@/middleware";
 import { AuthController } from "./auth.controller";
 import { loginSchema } from "./auth.schema";
-import { authMiddleware } from "@/middleware/auth.middleware";
+
 // 创建 auth 模块路由
 export function createAuthModule() {
   const router = new Hono();

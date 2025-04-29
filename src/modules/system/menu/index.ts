@@ -1,8 +1,6 @@
 // src/modules/system/menu/index.ts
 import { Hono } from "hono";
-import { authMiddleware } from "@/middleware/auth.middleware";
-import { requirePermission } from "@/middleware/permission.middleware";
-import { zodValidator } from "@/middleware/validtor-middleware";
+import { authMiddleware, zodValidator, requirePermission } from "@/middleware";
 import { MenuController } from "./menu.controller";
 import {
   createMenuSchema,

@@ -1,7 +1,6 @@
 // src/modules/ai/index.ts
 import { Hono } from "hono";
-import { authMiddleware } from "@/middleware/auth.middleware";
-import { zodValidator } from "@/middleware/validtor-middleware";
+import { authMiddleware, zodValidator } from "@/middleware";
 import { AIController } from "./ai.controller";
 import {
   createSessionSchema,

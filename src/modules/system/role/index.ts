@@ -1,8 +1,6 @@
 // src/modules/system/user/index.ts
 import { Hono } from "hono";
-import { authMiddleware } from "@/middleware/auth.middleware";
-import { requirePermission } from "@/middleware/permission.middleware";
-import { zodValidator } from "@/middleware/validtor-middleware";
+import { authMiddleware, requirePermission, zodValidator } from "@/middleware";
 import { RoleController } from "./role.controller";
 import {
   createRoleSchema,

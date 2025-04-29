@@ -5,8 +5,7 @@ import { logger } from "hono/logger";
 import { prettyJSON } from "hono/pretty-json";
 import { secureHeaders } from "hono/secure-headers";
 import { serveStatic } from "hono/bun";
-import { errorMiddleware } from "@/middleware/error.middleware";
-import { operationLogMiddleware } from "@/middleware/logger.middleware";
+import { errorMiddleware, operationLogMiddleware } from "@/middleware";
 import { config } from "./config";
 import { createRoutes } from "./routes";
 
