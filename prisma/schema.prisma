@@ -101,7 +101,7 @@ model Menu {
 model Dept {
   id        Int      @id @default(autoincrement())
   parentId  Int?     @map("parent_id") // 父部门ID
-  ancestors String?  @default("") @map("ancestors") // 祖级列表
+  ancestors String   @default("0") @map("ancestors") // 祖级列表
   name      String   @map("dept_name") // 部门名称
   orderNo   Int      @default(0) @map("order_num") // 显示顺序
   leader    String?  @map("leader") // 负责人

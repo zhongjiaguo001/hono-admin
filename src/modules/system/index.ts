@@ -3,7 +3,9 @@ import { Hono } from "hono";
 import { createUserModule } from "./user";
 import { createRoleModule } from "./role";
 import { createMenuModule } from "./menu";
-// 后续会导入其他模块如角色、菜单、部门等
+import { createDeptModule } from "./dept";
+import { createPostModule } from "./post";
+import { createDictModule } from "./dict";
 
 // 创建系统管理模块
 export function createSystemModule() {
@@ -15,7 +17,12 @@ export function createSystemModule() {
   router.route("/role", createRoleModule());
   // 注册菜单模块
   router.route("/menu", createMenuModule());
-  // 后续会注册其他子模块，如角色、菜单、部门等
+  // 注册部门模块
+  router.route("/dept", createDeptModule());
+  // 注册岗位模块
+  router.route("/post", createPostModule());
+  // 注册字典模块
+  router.route("/dict", createDictModule());
 
   return router;
 }
@@ -23,4 +30,7 @@ export function createSystemModule() {
 // 导出类型和模块
 export * from "./user";
 export * from "./role";
-// 后续会导出其他模块
+export * from "./menu";
+export * from "./dept";
+export * from "./post";
+export * from "./dict";

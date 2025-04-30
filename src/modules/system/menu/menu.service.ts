@@ -2,17 +2,87 @@
 import { prisma } from "@/db/prisma";
 import { logger } from "@/utils/logger.utils";
 import { redisUtils } from "@/utils/redis.utils";
-import { CreateMenuDto, UpdateMenuDto, MenuQueryDto } from "./menu.schema";
+import {
+  CreateMenuDto,
+  UpdateMenuDto,
+  MenuQueryDto,
+  MenuTypeEnum,
+} from "./menu.schema";
 
 export class MenuService {
+  /**
+   * 查询菜单列表
+   */
+  async findAll(query: MenuQueryDto = {}) {
+    try {
+      // 构建查询条件
+      const where: any = {};
+
+      if (query.name) {
+        where.name = { contains: query.name };
+      }
+
+      if (query.status !== undefined) {
+        where.status = query.status;
+      }
+
+      if (query.type !== undefined) {
+        where.type = query.type;
+      }
+
+      if (query.permission) {
+        where.permission = { contains: query.permission };
+      }
+
+      if (query.path) {
+        where.path = { contains: query.path };
+      }
+
+      // 查询所有菜单
+      const menus = await prisma.menu.findMany({
+        where,
+        orderBy: [{ orderNo: "asc" }, { id: "asc" }],
+      });
+
+      return menus;
+    } catch (error) {
+      logger.error("查询菜单列表失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 查询菜单树形列表
+   */
+  async findTree(query: MenuQueryDto = {}) {
+    try {
+      const menus = await this.findAll(query);
+      return this.buildTree(menus);
+    } catch (error) {
+      logger.error("查询菜单树形列表失败:", error);
+      throw error;
+    }
+  }
+
   /**
    * 创建菜单
    */
   async create(data: CreateMenuDto) {
     try {
-      return await prisma.menu.create({
+      // 验证上级菜单类型
+      if (data.parentId) {
+        await this.validateParentMenu(data.parentId, data.type);
+      }
+
+      // 创建菜单
+      const menu = await prisma.menu.create({
         data,
       });
+
+      // 清除菜单缓存
+      await this.clearMenuCache();
+
+      return menu;
     } catch (error) {
       logger.error("创建菜单失败:", error);
       throw error;
@@ -24,15 +94,44 @@ export class MenuService {
    */
   async update(id: number, data: UpdateMenuDto) {
     try {
-      const result = await prisma.menu.update({
+      // 检查菜单是否存在
+      const menu = await prisma.menu.findUnique({
+        where: { id },
+      });
+
+      if (!menu) {
+        throw new Error("菜单不存在");
+      }
+
+      // 不能将菜单更改为自己的子菜单
+      if (data.parentId === id) {
+        throw new Error("上级菜单不能选择自己");
+      }
+
+      // 验证上级菜单类型
+      if (data.parentId !== undefined && data.parentId !== menu.parentId) {
+        // 检查是否将菜单改为其子菜单
+        if (data.parentId) {
+          const childMenus = await this.findChildMenus(id);
+          if (childMenus.some((m) => m.id === data.parentId)) {
+            throw new Error("上级菜单不能选择自己的子菜单");
+          }
+
+          // 验证上级菜单类型
+          await this.validateParentMenu(data.parentId, data.type || menu.type);
+        }
+      }
+
+      // 更新菜单
+      const updatedMenu = await prisma.menu.update({
         where: { id },
         data,
       });
 
-      // 清除相关缓存
+      // 清除菜单缓存
       await this.clearMenuCache();
 
-      return result;
+      return updatedMenu;
     } catch (error) {
       logger.error("更新菜单失败:", error);
       throw error;
@@ -50,7 +149,7 @@ export class MenuService {
       });
 
       if (childCount > 0) {
-        throw new Error("该菜单下存在子菜单，无法删除");
+        throw new Error("存在子菜单，不允许删除");
       }
 
       // 检查是否有角色关联
@@ -59,60 +158,20 @@ export class MenuService {
       });
 
       if (roleMenuCount > 0) {
-        throw new Error("该菜单已被角色引用，无法删除");
+        throw new Error("菜单已被角色引用，不允许删除");
       }
 
-      const result = await prisma.menu.delete({
+      // 删除菜单
+      await prisma.menu.delete({
         where: { id },
       });
 
-      // 清除相关缓存
+      // 清除菜单缓存
       await this.clearMenuCache();
 
-      return result;
+      return true;
     } catch (error) {
       logger.error("删除菜单失败:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * 查询菜单树
-   */
-  async findTree(query: MenuQueryDto) {
-    try {
-      const where: any = {};
-
-      if (query.name) {
-        where.name = { contains: query.name };
-      }
-
-      if (query.path) {
-        where.path = { contains: query.path };
-      }
-
-      if (query.permission) {
-        where.permission = { contains: query.permission };
-      }
-
-      if (query.type !== undefined) {
-        where.type = query.type;
-      }
-
-      if (query.status !== undefined) {
-        where.status = query.status;
-      }
-
-      // 查询所有菜单
-      const menus = await prisma.menu.findMany({
-        where,
-        orderBy: { orderNo: "asc" },
-      });
-
-      // 构建树结构
-      return this.buildTree(menus);
-    } catch (error) {
-      logger.error("查询菜单树失败:", error);
       throw error;
     }
   }
@@ -122,9 +181,15 @@ export class MenuService {
    */
   async findById(id: number) {
     try {
-      return await prisma.menu.findUnique({
+      const menu = await prisma.menu.findUnique({
         where: { id },
       });
+
+      if (!menu) {
+        throw new Error("菜单不存在");
+      }
+
+      return menu;
     } catch (error) {
       logger.error("查询菜单详情失败:", error);
       throw error;
@@ -132,7 +197,53 @@ export class MenuService {
   }
 
   /**
-   * 获取用户菜单权限
+   * 获取菜单下拉树列表
+   */
+  async treeselect() {
+    try {
+      const menus = await prisma.menu.findMany({
+        where: { status: 1 }, // 只查询正常状态的菜单
+        orderBy: [{ orderNo: "asc" }, { id: "asc" }],
+      });
+
+      return this.buildTreeSelect(menus);
+    } catch (error) {
+      logger.error("获取菜单下拉树列表失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 根据角色ID查询菜单树结构
+   */
+  async roleMenuTreeselect(roleId: number) {
+    try {
+      // 查询所有菜单
+      const menus = await prisma.menu.findMany({
+        where: { status: 1 }, // 只查询正常状态的菜单
+        orderBy: [{ orderNo: "asc" }, { id: "asc" }],
+      });
+
+      // 查询角色已有菜单
+      const roleMenus = await prisma.roleMenu.findMany({
+        where: { roleId },
+        select: { menuId: true },
+      });
+
+      const checkedKeys = roleMenus.map((rm) => rm.menuId);
+
+      return {
+        menus: this.buildTreeSelect(menus),
+        checkedKeys,
+      };
+    } catch (error) {
+      logger.error("根据角色ID查询菜单树结构失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取用户菜单列表
    */
   async getUserMenus(userId: number) {
     try {
@@ -144,37 +255,51 @@ export class MenuService {
         return cachedMenus;
       }
 
-      // 获取用户角色
+      // 查询用户角色
       const userRoles = await prisma.userRole.findMany({
         where: { userId },
-        select: { roleId: true },
+        include: {
+          role: true,
+        },
       });
 
-      const roleIds = userRoles.map((ur) => ur.roleId);
+      // 检查是否有超级管理员角色
+      const isAdmin = userRoles.some((ur) => ur.role.key === "admin");
 
-      // 如果用户没有角色，返回空数组
-      if (roleIds.length === 0) {
-        return [];
+      // 获取菜单
+      let menus;
+      if (isAdmin) {
+        // 超级管理员可以访问所有菜单
+        menus = await prisma.menu.findMany({
+          where: {
+            status: 1, // 只查询正常状态的菜单
+            type: { in: [0, 1] }, // 只获取目录(0)和菜单(1)，不包括按钮(2)
+          },
+          orderBy: [{ orderNo: "asc" }, { id: "asc" }],
+        });
+      } else {
+        // 普通用户根据角色获取菜单
+        const roleIds = userRoles.map((ur) => ur.role.id);
+
+        // 查询角色菜单
+        const roleMenus = await prisma.roleMenu.findMany({
+          where: { roleId: { in: roleIds } },
+          select: { menuId: true },
+        });
+
+        const menuIds = [...new Set(roleMenus.map((rm) => rm.menuId))];
+
+        menus = await prisma.menu.findMany({
+          where: {
+            id: { in: menuIds },
+            status: 1, // 只查询正常状态的菜单
+            type: { in: [0, 1] }, // 只获取目录(0)和菜单(1)，不包括按钮(2)
+          },
+          orderBy: [{ orderNo: "asc" }, { id: "asc" }],
+        });
       }
 
-      // 获取角色菜单
-      const roleMenus = await prisma.roleMenu.findMany({
-        where: { roleId: { in: roleIds } },
-        select: { menuId: true },
-      });
-
-      const menuIds = [...new Set(roleMenus.map((rm) => rm.menuId))];
-
-      // 获取菜单信息
-      const menus = await prisma.menu.findMany({
-        where: {
-          id: { in: menuIds },
-          status: 1, // 只获取启用的菜单
-        },
-        orderBy: { orderNo: "asc" },
-      });
-
-      // 构建菜单树
+      // 构建树形结构
       const menuTree = this.buildTree(menus);
 
       // 缓存用户菜单，有效期1小时
@@ -182,13 +307,13 @@ export class MenuService {
 
       return menuTree;
     } catch (error) {
-      logger.error("获取用户菜单失败:", error);
+      logger.error("获取用户菜单列表失败:", error);
       throw error;
     }
   }
 
   /**
-   * 获取用户权限标识
+   * 获取用户权限列表
    */
   async getUserPermissions(userId: number) {
     try {
@@ -200,112 +325,171 @@ export class MenuService {
         return cachedPermissions;
       }
 
-      // 获取用户角色
+      // 查询用户角色
       const userRoles = await prisma.userRole.findMany({
         where: { userId },
-        select: { roleId: true },
+        include: {
+          role: true,
+        },
       });
 
-      const roleIds = userRoles.map((ur) => ur.roleId);
+      // 检查是否有超级管理员角色
+      const isAdmin = userRoles.some((ur) => ur.role.key === "admin");
 
-      // 如果用户没有角色，返回空数组
-      if (roleIds.length === 0) {
-        return [];
+      let permissions: string[] = [];
+
+      if (isAdmin) {
+        // 超级管理员拥有所有权限
+        permissions = ["*"];
+      } else {
+        // 普通用户根据角色获取权限
+        const roleIds = userRoles.map((ur) => ur.role.id);
+
+        // 查询角色菜单
+        const roleMenus = await prisma.roleMenu.findMany({
+          where: { roleId: { in: roleIds } },
+          include: {
+            menu: {
+              select: {
+                permission: true,
+              },
+            },
+          },
+        });
+
+        // 提取权限标识并过滤掉空值
+        permissions = roleMenus
+          .map((rm) => rm.menu.permission)
+          .filter(Boolean) as string[];
+
+        // 去重
+        permissions = [...new Set(permissions)];
       }
 
-      // 获取角色菜单
-      const roleMenus = await prisma.roleMenu.findMany({
-        where: { roleId: { in: roleIds } },
-        include: { menu: true },
-      });
-
-      // 提取权限标识
-      const permissions = roleMenus
-        .map((rm) => rm.menu.permission)
-        .filter(Boolean);
-
-      // 权限去重
-      const uniquePermissions = [...new Set(permissions)];
-
       // 缓存用户权限，有效期1小时
-      await redisUtils.set(cacheKey, uniquePermissions, 3600);
+      await redisUtils.set(cacheKey, permissions, 3600);
 
-      return uniquePermissions;
+      return permissions;
     } catch (error) {
-      logger.error("获取用户权限失败:", error);
+      logger.error("获取用户权限列表失败:", error);
       throw error;
     }
   }
 
   /**
-   * 构建树结构
+   * 构建树形结构
    */
-  private buildTree(menus: any[]) {
-    const menuMap = new Map();
+  private buildTree(menus: any[], parentId: number | null = null) {
     const result: any[] = [];
 
-    // 创建映射
     menus.forEach((menu) => {
-      menuMap.set(menu.id, { ...menu, children: [] });
-    });
+      // 兼容parentId为null或0的情况
+      if (
+        (parentId === null &&
+          (menu.parentId === null || menu.parentId === 0)) ||
+        menu.parentId === parentId
+      ) {
+        const node = { ...menu };
 
-    // 构建树
-    menus.forEach((menu) => {
-      const node = menuMap.get(menu.id);
-
-      if (menu.parentId === null) {
-        // 根节点
-        result.push(node);
-      } else {
-        // 子节点，添加到父节点的children
-        const parent = menuMap.get(menu.parentId);
-        if (parent) {
-          parent.children.push(node);
+        // 递归构建子菜单
+        const children = this.buildTree(menus, menu.id);
+        if (children.length > 0) {
+          node.children = children;
         }
+
+        result.push(node);
       }
     });
-
-    // 清理空的children数组
-    this.cleanupEmptyChildren(result);
 
     return result;
   }
 
   /**
-   * 清理空的children数组
+   * 构建下拉树结构
    */
-  private cleanupEmptyChildren(nodes: any[]) {
-    nodes.forEach((node) => {
-      if (node.children.length === 0) {
-        delete node.children;
-      } else {
-        this.cleanupEmptyChildren(node.children);
-      }
-    });
+  private buildTreeSelect(menus: any[]) {
+    return this.buildTree(
+      menus.map((menu) => ({
+        ...menu,
+        label: menu.name,
+        value: menu.id,
+      }))
+    );
   }
 
   /**
-   * 清除菜单相关缓存
+   * 查找所有子菜单
    */
-  async clearMenuCache() {
-    try {
-      // 清除所有用户的菜单和权限缓存
-      const userMenuKeys = await redisUtils.execute("KEYS", "user:*:menus");
-      const userPermKeys = await redisUtils.execute(
-        "KEYS",
-        "user:*:permissions"
-      );
+  private async findChildMenus(menuId: number) {
+    const allMenus = await prisma.menu.findMany();
+    const result: any[] = [];
 
-      if (userMenuKeys.length > 0) {
-        await redisUtils.del(userMenuKeys);
+    // 递归查找子菜单
+    const findChildren = (pid: number) => {
+      const children = allMenus.filter((m) => m.parentId === pid);
+      if (children.length > 0) {
+        result.push(...children);
+        children.forEach((child) => findChildren(child.id));
       }
+    };
 
-      if (userPermKeys.length > 0) {
-        await redisUtils.del(userPermKeys);
+    findChildren(menuId);
+    return result;
+  }
+
+  /**
+   * 验证上级菜单类型
+   */
+  private async validateParentMenu(parentId: number, type: number) {
+    // 查询上级菜单
+    const parentMenu = await prisma.menu.findUnique({
+      where: { id: parentId },
+    });
+
+    if (!parentMenu) {
+      throw new Error("上级菜单不存在");
+    }
+
+    // 目录类型只能选择顶级菜单或者目录类型
+    if (
+      type === MenuTypeEnum.DIRECTORY &&
+      parentMenu.type !== MenuTypeEnum.DIRECTORY
+    ) {
+      throw new Error("目录类型的菜单上级只能是目录类型");
+    }
+
+    // 菜单类型只能选择目录类型
+    if (
+      type === MenuTypeEnum.MENU &&
+      parentMenu.type !== MenuTypeEnum.DIRECTORY
+    ) {
+      throw new Error("菜单类型的菜单上级只能是目录类型");
+    }
+
+    // 按钮类型只能选择菜单类型
+    if (type === MenuTypeEnum.BUTTON && parentMenu.type !== MenuTypeEnum.MENU) {
+      throw new Error("按钮类型的菜单上级只能是菜单类型");
+    }
+  }
+
+  /**
+   * 清除菜单缓存
+   */
+  private async clearMenuCache() {
+    try {
+      // 查询所有用户
+      const users = await prisma.user.findMany({
+        select: { id: true },
+      });
+
+      // 清除所有用户的菜单和权限缓存
+      for (const user of users) {
+        await redisUtils.del(`user:${user.id}:menus`);
+        await redisUtils.del(`user:${user.id}:permissions`);
       }
     } catch (error) {
       logger.error("清除菜单缓存失败:", error);
-      throw error;
+      // 不抛出异常，避免影响主业务
     }
   }
 }

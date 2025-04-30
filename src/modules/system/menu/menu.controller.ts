@@ -1,6 +1,7 @@
 // src/modules/system/menu/menu.controller.ts
 import { Context } from "hono";
 import { MenuService } from "./menu.service";
+import { MenuTypeEnum } from "./menu.schema";
 
 export class MenuController {
   private menuService: MenuService;
@@ -10,12 +11,12 @@ export class MenuController {
   }
 
   /**
-   * 获取菜单树
+   * 获取菜单列表
    */
-  getTree = async (c: Context) => {
+  list = async (c: Context) => {
     try {
       const query = c.get("zod");
-      const menus = await this.menuService.findTree(query);
+      const menus = await this.menuService.findAll(query);
 
       return c.json({
         code: 200,
@@ -25,7 +26,65 @@ export class MenuController {
       return c.json(
         {
           code: 500,
-          message: error instanceof Error ? error.message : "获取菜单失败",
+          message: error instanceof Error ? error.message : "获取菜单列表失败",
+        },
+        500
+      );
+    }
+  };
+
+  /**
+   * 获取菜单树形结构
+   */
+  treeList = async (c: Context) => {
+    try {
+      const query = c.get("zod");
+      const menuTree = await this.menuService.findTree(query);
+
+      return c.json({
+        code: 200,
+        data: menuTree,
+      });
+    } catch (error) {
+      return c.json(
+        {
+          code: 500,
+          message:
+            error instanceof Error ? error.message : "获取菜单树形结构失败",
+        },
+        500
+      );
+    }
+  };
+
+  /**
+   * 获取菜单详情
+   */
+  getInfo = async (c: Context) => {
+    try {
+      const id = Number(c.req.param("id"));
+
+      if (isNaN(id)) {
+        return c.json(
+          {
+            code: 400,
+            message: "无效的菜单ID",
+          },
+          400
+        );
+      }
+
+      const menu = await this.menuService.findById(id);
+
+      return c.json({
+        code: 200,
+        data: menu,
+      });
+    } catch (error) {
+      return c.json(
+        {
+          code: 500,
+          message: error instanceof Error ? error.message : "获取菜单详情失败",
         },
         500
       );
@@ -38,6 +97,10 @@ export class MenuController {
   create = async (c: Context) => {
     try {
       const data = c.get("zod");
+
+      // 校验菜单数据
+      this.validateMenuData(data);
+
       const menu = await this.menuService.create(data);
 
       return c.json({
@@ -61,8 +124,8 @@ export class MenuController {
    */
   update = async (c: Context) => {
     try {
-      const data = c.get("zod");
       const id = Number(c.req.param("id"));
+      const data = c.get("zod");
 
       if (isNaN(id)) {
         return c.json(
@@ -74,11 +137,17 @@ export class MenuController {
         );
       }
 
-      await this.menuService.update(id, data);
+      // 校验菜单数据
+      if (data.type !== undefined) {
+        this.validateMenuData({ ...data, type: data.type });
+      }
+
+      const menu = await this.menuService.update(id, data);
 
       return c.json({
         code: 200,
         message: "更新菜单成功",
+        data: menu,
       });
     } catch (error) {
       return c.json(
@@ -126,33 +195,22 @@ export class MenuController {
   };
 
   /**
-   * 获取菜单详情
+   * 获取菜单下拉树列表
    */
-  getInfo = async (c: Context) => {
+  treeselect = async (c: Context) => {
     try {
-      const id = Number(c.req.param("id"));
-
-      if (isNaN(id)) {
-        return c.json(
-          {
-            code: 400,
-            message: "无效的菜单ID",
-          },
-          400
-        );
-      }
-
-      const menu = await this.menuService.findById(id);
+      const menuTree = await this.menuService.treeselect();
 
       return c.json({
         code: 200,
-        data: menu,
+        data: menuTree,
       });
     } catch (error) {
       return c.json(
         {
           code: 500,
-          message: error instanceof Error ? error.message : "获取菜单详情失败",
+          message:
+            error instanceof Error ? error.message : "获取菜单下拉树列表失败",
         },
         500
       );
@@ -160,7 +218,42 @@ export class MenuController {
   };
 
   /**
-   * 获取用户菜单
+   * 获取角色菜单树
+   */
+  roleMenuTreeselect = async (c: Context) => {
+    try {
+      const roleId = Number(c.req.param("roleId"));
+
+      if (isNaN(roleId)) {
+        return c.json(
+          {
+            code: 400,
+            message: "无效的角色ID",
+          },
+          400
+        );
+      }
+
+      const result = await this.menuService.roleMenuTreeselect(roleId);
+
+      return c.json({
+        code: 200,
+        data: result,
+      });
+    } catch (error) {
+      return c.json(
+        {
+          code: 500,
+          message:
+            error instanceof Error ? error.message : "获取角色菜单树失败",
+        },
+        500
+      );
+    }
+  };
+
+  /**
+   * 获取用户菜单列表
    */
   getUserMenus = async (c: Context) => {
     try {
@@ -175,7 +268,8 @@ export class MenuController {
       return c.json(
         {
           code: 500,
-          message: error instanceof Error ? error.message : "获取用户菜单失败",
+          message:
+            error instanceof Error ? error.message : "获取用户菜单列表失败",
         },
         500
       );
@@ -183,7 +277,7 @@ export class MenuController {
   };
 
   /**
-   * 获取用户权限
+   * 获取用户权限标识列表
    */
   getUserPermissions = async (c: Context) => {
     try {
@@ -198,10 +292,41 @@ export class MenuController {
       return c.json(
         {
           code: 500,
-          message: error instanceof Error ? error.message : "获取用户权限失败",
+          message:
+            error instanceof Error ? error.message : "获取用户权限标识列表失败",
         },
         500
       );
     }
   };
+
+  /**
+   * 校验菜单数据
+   */
+  private validateMenuData(data: any) {
+    // 根据菜单类型校验必填字段
+    switch (data.type) {
+      case MenuTypeEnum.DIRECTORY:
+        if (!data.path) {
+          throw new Error("目录路由地址不能为空");
+        }
+        if (!data.icon) {
+          throw new Error("目录图标不能为空");
+        }
+        break;
+      case MenuTypeEnum.MENU:
+        if (!data.path) {
+          throw new Error("菜单路由地址不能为空");
+        }
+        if (!data.component) {
+          throw new Error("菜单组件路径不能为空");
+        }
+        break;
+      case MenuTypeEnum.BUTTON:
+        if (!data.permission) {
+          throw new Error("按钮权限标识不能为空");
+        }
+        break;
+    }
+  }
 }
