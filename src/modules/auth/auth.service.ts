@@ -8,12 +8,18 @@ import { redisUtils } from "@/utils/redis.utils";
 import type { LoginDto } from "./auth.schema";
 import { logger } from "@/utils/logger.utils";
 import { prisma } from "@/db/prisma";
+import { LogininforService } from "@/modules/monitor/log/logininfor/logininfor.service";
 
 export class AuthService {
   private readonly JWT_SECRET = process.env.JWT_SECRET as string;
   private readonly TOKEN_EXPIRATION_SECONDS = 60 * 60 * 24; // 24小时
   private readonly CAPTCHA_EXPIRATION_SECONDS = 60 * 5; // 5分钟
   private readonly CAPTCHA_PREFIX = "captcha:";
+  private logininforService: LogininforService;
+
+  constructor() {
+    this.logininforService = new LogininforService();
+  }
 
   /**
    * 生成验证码
@@ -40,64 +46,88 @@ export class AuthService {
    * 用户登录
    */
   async login(loginDto: LoginDto, clientIP: string): Promise<string> {
-    const { username, password, captcha } = loginDto;
+    try {
+      const { username, password, captcha } = loginDto;
 
-    // 验证验证码
-    const redisKey = `${this.CAPTCHA_PREFIX}${clientIP}`;
-    const storedCaptcha = await redisUtils.get(redisKey);
+      // 验证验证码
+      const redisKey = `${this.CAPTCHA_PREFIX}${clientIP}`;
+      const storedCaptcha = await redisUtils.get(redisKey);
 
-    if (!storedCaptcha || storedCaptcha !== captcha) {
-      throw new Error("验证码错误或已过期");
+      if (!storedCaptcha || storedCaptcha !== captcha) {
+        throw new Error("验证码错误或已过期");
+      }
+
+      // 验证成功后删除验证码
+      await redisUtils.del(redisKey);
+
+      // 查询用户
+      const user = await prisma.user.findUnique({
+        where: { username },
+        select: {
+          id: true,
+          username: true,
+          password: true,
+          status: true,
+        },
+      });
+
+      if (!user) {
+        throw new Error("用户不存在");
+      }
+
+      // 验证密码
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        throw new Error("用户名或密码错误");
+      }
+
+      // 生成JWT
+      const jti = uuidv4();
+      const now = Math.floor(Date.now() / 1000);
+      const exp = now + this.TOKEN_EXPIRATION_SECONDS;
+
+      const payload = {
+        jti,
+        userId: user.id,
+        username: user.username,
+        password: user.password,
+        iat: now,
+        exp,
+      };
+
+      const token = await sign(
+        { ...payload, sub: payload.userId.toString() },
+        this.JWT_SECRET
+      );
+
+      // 存储token到Redis
+      const userRedisKey = `user:${user.id}`;
+      await redisUtils.set(userRedisKey, token, this.TOKEN_EXPIRATION_SECONDS);
+
+      // 记录登录成功日志
+      await this.logininforService.addLoginLog({
+        username: username,
+        status: "0", // 成功
+        ipaddr: clientIP,
+        loginLocation: "未知", // 可添加IP地址解析获取地理位置
+        browser: "未知", // 可从请求头解析
+        os: "未知", // 可从请求头解析
+        msg: "登录成功",
+        userId: user.id,
+      });
+
+      return token;
+    } catch (error) {
+      // 记录登录失败日志
+      await this.logininforService.addLoginLog({
+        username: loginDto.username,
+        status: "1", // 失败
+        ipaddr: clientIP,
+        msg: error instanceof Error ? error.message : "登录失败",
+      });
+
+      throw error;
     }
-
-    // 验证成功后删除验证码
-    await redisUtils.del(redisKey);
-
-    // 查询用户
-    const user = await prisma.user.findUnique({
-      where: { username },
-      select: {
-        id: true,
-        username: true,
-        password: true,
-        status: true,
-      },
-    });
-
-    if (!user) {
-      throw new Error("用户不存在");
-    }
-
-    // 验证密码
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      throw new Error("用户名或密码错误");
-    }
-
-    // 生成JWT
-    const jti = uuidv4();
-    const now = Math.floor(Date.now() / 1000);
-    const exp = now + this.TOKEN_EXPIRATION_SECONDS;
-
-    const payload = {
-      jti,
-      userId: user.id,
-      username: user.username,
-      password: user.password,
-      iat: now,
-      exp,
-    };
-
-    const token = await sign(
-      { ...payload, sub: payload.userId.toString() },
-      this.JWT_SECRET
-    );
-
-    // 存储token到Redis
-    const userRedisKey = `user:${user.id}`;
-    await redisUtils.set(userRedisKey, token, this.TOKEN_EXPIRATION_SECONDS);
-
-    return token;
   }
 
   /**

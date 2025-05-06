@@ -1,15 +1,24 @@
 // src/modules/ai/ai.service.ts
 import { prisma } from "@/db/prisma";
 import { logger } from "@/utils/logger.utils";
-import { AI_API_URL, AI_API_KEY, DEFAULT_MODEL } from "./ai.constants";
-import axios from "axios";
+import {
+  AI_API_KEY,
+  DEFAULT_MODEL,
+  AVAILABLE_MODELS,
+  OPENAI_API_KEY,
+  ANTHROPIC_API_KEY,
+  GOOGLE_API_KEY,
+} from "./ai.constants";
 import {
   CreateSessionDto,
   MessageInfo,
   SendMessageDto,
-  AIModelRequest,
   SessionListParams,
 } from "./ai.types";
+import { streamText, createDataStream } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { google } from "@ai-sdk/google";
 
 // 存储活跃的生成请求及其取消控制器
 const activeGenerations = new Map<number, AbortController>();
@@ -254,12 +263,41 @@ export class AIService {
   }
 
   /**
+   * 保存AI回复消息
+   */
+  private async saveAssistantMessage(
+    sessionId: number,
+    content: string
+  ): Promise<MessageInfo> {
+    try {
+      const message = await prisma.message.create({
+        data: {
+          sessionId,
+          role: "assistant",
+          content,
+        },
+      });
+
+      // 更新会话时间
+      await prisma.session.update({
+        where: { id: sessionId },
+        data: { updatedAt: new Date() },
+      });
+
+      return message;
+    } catch (error) {
+      logger.error("保存AI回复失败:", error);
+      throw error;
+    }
+  }
+
+  /**
    * 流式发送消息
    */
   async sendMessageStream(
     userId: number,
     dto: SendMessageDto
-  ): Promise<AsyncIterable<string>> {
+  ): Promise<ReadableStream<Uint8Array>> {
     const { sessionId, content, fileUrl, mimeType } = dto;
 
     try {
@@ -332,218 +370,110 @@ export class AIService {
       const controller = new AbortController();
       activeGenerations.set(sessionId, controller);
 
-      // 调用AI模型API获取流
-      const modelId = session.modelId || DEFAULT_MODEL;
-      const stream = this.callAIModelStream(
-        {
-          model: modelId,
-          messages: contextMessages,
-          stream: true,
-          temperature: 0.7,
-          // max_tokens: 2048,
-        },
-        controller.signal
-      );
+      // 根据选择的模型获取对应的提供商
+      const modelInfo =
+        AVAILABLE_MODELS.find((m) => m.id === session.modelId) ||
+        AVAILABLE_MODELS.find((m) => m.id === DEFAULT_MODEL);
 
-      return this.processStream(stream, sessionId);
-    } catch (error) {
-      logger.error("初始化流式消息失败:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * 处理流式响应
-   */
-  private async *processStream(
-    stream: AsyncIterable<any>,
-    sessionId: number
-  ): AsyncIterable<string> {
-    let fullResponse = "";
-
-    try {
-      for await (const chunk of stream) {
-        // 剥去data: 前缀
-        const cleanData = chunk.toString().replace(/^data: /, "");
-
-        // 处理完成信号
-        if (cleanData === "[DONE]") {
-          // 保存完整的AI回复
-          if (fullResponse.trim()) {
-            await prisma.message.create({
-              data: {
-                sessionId,
-                role: "assistant",
-                content: fullResponse,
-              },
-            });
-
-            // 更新会话时间
-            await prisma.session.update({
-              where: { id: sessionId },
-              data: { updatedAt: new Date() },
-            });
-          }
-
-          // 从活跃生成列表中移除
-          activeGenerations.delete(sessionId);
-
-          yield "[DONE]";
-          return;
-        }
-
-        try {
-          // 解析JSON数据
-          const data = JSON.parse(cleanData);
-
-          // 提取文本内容
-          const content = data.choices?.[0]?.delta?.content || "";
-
-          if (content) {
-            fullResponse += content;
-            yield content;
-          }
-        } catch (parseError) {
-          logger.debug("无法解析数据块:", cleanData);
-          // 跳过无法解析的数据块
-        }
-      }
-    } catch (error) {
-      logger.error("处理流式数据失败:", error);
-
-      // 如果是中止错误，则静默处理
-      if (error instanceof Error && error.name === "AbortError") {
-        logger.info(`会话 ${sessionId} 的生成已被用户取消`);
-
-        // 保存已生成的部分内容
-        if (fullResponse.trim()) {
-          await prisma.message.create({
-            data: {
-              sessionId,
-              role: "assistant",
-              content: fullResponse + "\n[用户已取消]",
-            },
-          });
-        }
-      } else {
-        // 其他错误则返回错误信息
-        yield `处理错误: ${
-          error instanceof Error ? error.message : String(error)
-        }`;
-
-        // 尝试保存已接收的内容
-        if (fullResponse) {
-          await prisma.message.create({
-            data: {
-              sessionId,
-              role: "assistant",
-              content: fullResponse + "\n[传输中断]",
-            },
-          });
-        }
+      if (!modelInfo) {
+        throw new Error(`未找到模型: ${session.modelId}`);
       }
 
-      // 从活跃生成列表中移除
-      activeGenerations.delete(sessionId);
-    }
-  }
+      // 创建 AI 数据流
+      const dataStream = createDataStream({
+        execute: async (dataStreamWriter) => {
+          try {
+            let result;
 
-  /**
-   * 调用AI模型API(流式)
-   */
-  private async *callAIModelStream(
-    requestData: AIModelRequest,
-    signal?: AbortSignal
-  ): AsyncIterable<string> {
-    try {
-      // 打印请求数据，用于调试
-      logger.debug("AI API请求数据:", JSON.stringify(requestData, null, 2));
+            // 根据提供商选择不同的 AI 模型
+            switch (modelInfo.provider) {
+              case "openai":
+                if (!OPENAI_API_KEY) throw new Error("未配置 OpenAI API 密钥");
+                result = streamText({
+                  model: openai(modelInfo.id, { apiKey: OPENAI_API_KEY }),
+                  messages: contextMessages.map((msg) => ({
+                    role: msg.role,
+                    content: msg.content,
+                  })),
+                });
+                break;
 
-      // 确保请求数据符合API要求
-      const sanitizedMessages = requestData.messages.filter(
-        (msg) =>
-          msg &&
-          msg.role &&
-          ["user", "assistant", "system"].includes(msg.role) &&
-          msg.content
-      );
+              case "anthropic":
+                if (!ANTHROPIC_API_KEY)
+                  throw new Error("未配置 Anthropic API 密钥");
+                result = streamText({
+                  model: anthropic(modelInfo.id, { apiKey: ANTHROPIC_API_KEY }),
+                  messages: contextMessages.map((msg) => ({
+                    role: msg.role,
+                    content: msg.content,
+                  })),
+                });
+                break;
 
-      // 创建符合API要求的请求对象
-      const apiRequest = {
-        model: requestData.model,
-        messages: sanitizedMessages,
-        stream: true,
-        // temperature: requestData.temperature || 0.7,
-        // max_tokens: requestData.max_tokens || 2048,
-      };
+              case "google":
+                if (!GOOGLE_API_KEY) throw new Error("未配置 Google API 密钥");
+                result = streamText({
+                  model: google(modelInfo.id, { apiKey: GOOGLE_API_KEY }),
+                  messages: contextMessages.map((msg) => ({
+                    role: msg.role,
+                    content: msg.content,
+                  })),
+                });
+                break;
 
-      // 发送请求到AI API
-      const response = await fetch(`${AI_API_URL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${AI_API_KEY}`,
-          // Accept: "text/event-stream", // 修改为正确的流式响应格式
-          Accept: "application/json",
+              default:
+                throw new Error(`不支持的模型提供商: ${modelInfo.provider}`);
+            }
+
+            // 完整的响应内容
+            let fullResponse = "";
+
+            // 合并到数据流
+            result.textStream.pipeTo(
+              new WritableStream({
+                write: async (chunk) => {
+                  fullResponse += chunk;
+                  dataStreamWriter.writeData(chunk);
+                },
+                close: async () => {
+                  // 流完成时保存完整回复
+                  await this.saveAssistantMessage(sessionId, fullResponse);
+
+                  // 从活跃生成列表中移除
+                  activeGenerations.delete(sessionId);
+
+                  dataStreamWriter.writeData("[DONE]");
+                },
+                abort: async (reason) => {
+                  logger.error(`流中断: ${reason}`);
+                  if (fullResponse) {
+                    await this.saveAssistantMessage(
+                      sessionId,
+                      fullResponse + "\n[传输中断]"
+                    );
+                  }
+                  activeGenerations.delete(sessionId);
+                },
+              })
+            );
+          } catch (error) {
+            logger.error("AI 生成错误:", error);
+            dataStreamWriter.writeData(
+              `错误: ${error instanceof Error ? error.message : String(error)}`
+            );
+            dataStreamWriter.writeData("[DONE]");
+            activeGenerations.delete(sessionId);
+          }
         },
-        body: JSON.stringify(apiRequest),
-        // signal: signal, // 启用信号用于中止请求
+        onError: (error) => {
+          logger.error("数据流错误:", error);
+          return error instanceof Error ? error.message : String(error);
+        },
       });
 
-      // 检查响应状态
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error(
-          `API响应错误 ${response.status} ${response.statusText}:`,
-          errorText
-        );
-        throw new Error(
-          `API请求失败: ${response.status} ${response.statusText} - ${errorText}`
-        );
-      }
-
-      if (!response.body) {
-        throw new Error("响应体为空");
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        // 解码字节流为文本
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-
-        // 按行解析SSE数据
-        let lineEndIndex;
-        while ((lineEndIndex = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.substring(0, lineEndIndex).trim();
-          buffer = buffer.substring(lineEndIndex + 1);
-
-          if (line && (line.startsWith("data:") || line === "data: [DONE]")) {
-            yield line;
-          }
-        }
-      }
-
-      // 处理可能的剩余数据
-      if (
-        buffer.trim() &&
-        (buffer.trim().startsWith("data:") || buffer.trim() === "data: [DONE]")
-      ) {
-        yield buffer.trim();
-      }
+      return dataStream;
     } catch (error) {
-      // 向上抛出错误，由调用者处理
-      if (error instanceof Error && error.name === "AbortError") {
-        logger.info("API请求已被用户中止");
-      } else {
-        logger.error("流式调用AI模型API失败:", error);
-      }
+      logger.error("初始化流式消息失败:", error);
       throw error;
     }
   }
@@ -591,29 +521,11 @@ export class AIService {
    */
   async getAvailableModels() {
     try {
-      const response = await axios.get(`${AI_API_URL}/models`, {
-        headers: {
-          Authorization: `Bearer ${AI_API_KEY}`,
-        },
-      });
-
-      // 检查响应结构
-      if (!response.data || !response.data.data) {
-        logger.warn("API 模型列表响应格式异常:", response.data);
-        return this.getDefaultModels();
-      }
-
-      return (
-        response.data.data.filter(
-          (model: any) =>
-            // 只返回支持聊天功能的模型
-            model.id &&
-            (model.id.includes("gpt") || model.capabilities?.includes("chat"))
-        ) || this.getDefaultModels()
-      );
+      // 返回内部配置的模型列表
+      return AVAILABLE_MODELS;
     } catch (error) {
       logger.error("获取模型列表失败:", error);
-      return this.getDefaultModels();
+      return [];
     }
   }
 }
